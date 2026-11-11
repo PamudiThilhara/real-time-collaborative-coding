@@ -3,10 +3,13 @@ package lk.codecrew.execution;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -14,6 +17,7 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Java implementation of an HTTP remote-code runner, with disposable Docker containers. */
 public final class ExecutionServer {
@@ -101,9 +105,17 @@ public final class ExecutionServer {
         String image = language.equals("python") ? "python:3.12-alpine" : "node:22-alpine";
         String runner = language.equals("python") ? "python3" : "node";
         String name = "codecrew-" + UUID.randomUUID().toString().replace("-", "");
-        Path output = dir.resolve("output.txt");
         try {
             Files.writeString(dir.resolve(filename), code, StandardCharsets.UTF_8);
+            // Docker runs as an unprivileged user. On Linux, temporary folders normally
+            // have mode 0700, which would make the mounted source unreadable in Docker.
+            // 0711 allows traversal but not directory listing by other local users.
+            try {
+                Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwx--x--x"));
+                Files.setPosixFilePermissions(dir.resolve(filename), PosixFilePermissions.fromString("rw-r--r--"));
+            } catch (UnsupportedOperationException ignored) {
+                // Windows uses a different filesystem permission model.
+            }
             ProcessBuilder builder = new ProcessBuilder("docker", "run", "--rm", "--name", name,
                 "--network", "none", "--memory", "128m", "--cpus", "0.5", "--pids-limit", "64",
                 "--ulimit", "fsize=65536:65536", "--read-only", "--cap-drop", "ALL",
@@ -111,8 +123,27 @@ public final class ExecutionServer {
                 "--tmpfs", "/tmp:rw,nosuid,noexec,size=16m",
                 "--mount", "type=bind,src=" + dir.toAbsolutePath() + ",dst=/workspace,readonly",
                 "--workdir", "/workspace", image, runner, filename);
-            builder.redirectErrorStream(true).redirectOutput(output.toFile());
+            // Drain output continuously instead of redirecting untrusted output to
+            // an unbounded host file. An infinite print loop must not fill the disk.
+            builder.redirectErrorStream(true);
             Process process = builder.start();
+            ByteArrayOutputStream collected = new ByteArrayOutputStream();
+            AtomicBoolean truncated = new AtomicBoolean(false);
+            Thread outputReader = new Thread(() -> {
+                try (InputStream stream = process.getInputStream()) {
+                    byte[] buffer = new byte[8192];
+                    int count;
+                    while ((count = stream.read(buffer)) >= 0) {
+                        int room = MAX_OUTPUT - collected.size();
+                        if (count > room) truncated.set(true);
+                        if (room > 0) collected.write(buffer, 0, Math.min(room, count));
+                    }
+                } catch (IOException ignored) {
+                    // The stream can close when a timed-out Docker client is killed.
+                }
+            }, "codecrew-output-reader");
+            outputReader.setDaemon(true);
+            outputReader.start();
             boolean finished = process.waitFor(12, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
@@ -122,16 +153,16 @@ public final class ExecutionServer {
                     if (!cleanup.waitFor(3, TimeUnit.SECONDS)) cleanup.destroyForcibly();
                 } catch (IOException ignored) { }
             }
-            String text;
-            try (var stream = Files.newInputStream(output)) {
-                byte[] bytes = stream.readNBytes(MAX_OUTPUT + 1);
-                text = new String(bytes, 0, Math.min(bytes.length, MAX_OUTPUT), StandardCharsets.UTF_8);
-                if (bytes.length > MAX_OUTPUT) text += "\n[output truncated]";
+            outputReader.join(2_000);
+            if (outputReader.isAlive()) {
+                process.getInputStream().close();
+                outputReader.join(1_000);
             }
+            String text = collected.toString(StandardCharsets.UTF_8);
+            if (truncated.get()) text += "\n[output truncated]";
             return new ExecutionResult(text, finished ? process.exitValue() : -1, !finished);
         } finally {
             Files.deleteIfExists(dir.resolve(filename));
-            Files.deleteIfExists(output);
             Files.deleteIfExists(dir);
         }
     }

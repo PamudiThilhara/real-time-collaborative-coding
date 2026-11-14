@@ -1127,6 +1127,15 @@
 .terminal-message.info {
   color: #dec997;
 }
+.terminal-message.error {
+  color: #e6a3a3;
+}
+.terminal-output {
+  margin: 6px 0 0;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .terminal-message time {
   color: #5f7868;
   font-size: 9px;
@@ -1696,3 +1705,35 @@
     padding-block: 10px 15px;
   }
 }
+.connection-notice {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.room-local-status:not([data-status='connected']) .status-dot {
+  background: #e9bb86;
+  box-shadow: none;
+}
+
+.draft-recovery {
+  padding: 10px 20px;
+  background: #181d1b;
+  color: #e9bb86;
+  border-bottom: 1px solid #242d28;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.draft-recovery summary { cursor: pointer; }
+.draft-recovery textarea {
+  display: block;
+  width: 100%;
+  height: 90px;
+  margin-block: 8px;
+  background: #111415;
+  color: #d4ddd8;
+  border: 1px solid #345443;
+  resize: vertical;
+}
+
+button:disabled { opacity: 0.6; cursor: wait; }

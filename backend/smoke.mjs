@@ -42,7 +42,7 @@ const type = (name) => (event) => event.type === name
 
 try {
   const [alice, bob, other] = await Promise.all([connect(), connect(), connect()])
-  alice.send({ type: 'join', roomId, username: 'Alice' })
+  alice.send({ type: 'create', roomId, username: 'Alice' })
   const initial = await alice.next(type('joined'))
   assert.equal(initial.documents.python.version, 0)
 
@@ -65,7 +65,13 @@ try {
   const conflict = await loser.next(type('conflict'))
   assert.deepEqual(conflict.document, seenByAlice.document)
 
-  other.send({ type: 'join', roomId: roomId + '-other', username: 'Other' })
+  other.send({ type: 'join', roomId: roomId + '-missing', username: 'Other' })
+  assert.equal((await other.next(type('error'))).code, 'room_not_found')
+  other.send({ type: 'create', roomId, username: 'Other' })
+  assert.equal((await other.next(type('error'))).code, 'room_exists')
+  other.send({ type: 'create', roomId: 'invalid room!', username: 'Other' })
+  assert.equal((await other.next(type('error'))).code, 'invalid_join')
+  other.send({ type: 'create', roomId: roomId + '-other', username: 'Other' })
   const isolated = await other.next(type('joined'))
   assert.equal(isolated.documents.python.version, 0)
   assert.equal(isolated.participants.length, 1)
@@ -74,7 +80,7 @@ try {
   const presence = await alice.next((event) => event.type === 'presence'
     && event.participants.length === 1 && event.participants[0].username === 'Alice')
   assert.equal(presence.participants[0].id, initial.clientId)
-  console.log('Passed room join, concurrent edit, conflict, isolation, and disconnect checks.')
+  console.log('Passed create, join, missing/duplicate/invalid room, concurrent edit, conflict, isolation, and disconnect checks.')
 } finally {
   clearTimeout(deadline)
   sockets.forEach((socket) => socket.close())

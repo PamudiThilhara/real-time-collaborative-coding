@@ -25,18 +25,23 @@ test('validates the home form, creates a room, and leaves it', async ({
   expect(errors).toEqual([])
 })
 
-test('joins a room, edits both languages, preserves drafts, and previews execution', async ({
+test('joins a room, edits both languages, preserves drafts, and executes JavaScript', async ({
   page,
   context,
 }) => {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const host = await context.newPage()
+  await host.goto('/')
+  await host.getByLabel('What should we call you?').fill('Host')
+  await host.getByRole('button', { name: 'Create a room' }).click()
+  const roomId = await host.locator('.room-id').innerText()
   await page.goto('/')
   await page.getByLabel('What should we call you?').fill('Sam')
-  await page.getByLabel('Already have a room?').fill('crew-testing')
+  await page.getByLabel('Already have a room?').fill(roomId)
   await page.getByRole('button', { name: 'Join room', exact: true }).click()
-  await expect(page.locator('.room-id')).toHaveText('crew-testing')
+  await expect(page.locator('.room-id')).toHaveText(roomId)
   await expect(page.locator('.monaco-editor')).toBeVisible()
 
   const editor = page.getByRole('textbox', { name: 'Editor content' })
@@ -47,7 +52,7 @@ test('joins a room, edits both languages, preserves drafts, and previews executi
   await page
     .getByRole('combobox', { name: 'Editor language' })
     .selectOption('javascript')
-  await expect(page.locator('.view-lines')).toContainText('function greet')
+  await expect(page.locator('.view-lines')).toContainText('console.log')
   await editor.focus()
   await page.keyboard.press('ControlOrMeta+Home')
   await page.keyboard.type('// saved JavaScript draft\n')
@@ -63,16 +68,18 @@ test('joins a room, edits both languages, preserves drafts, and previews executi
   )
   await page.getByRole('button', { name: 'Run code', exact: true }).click()
   await expect(page.getByRole('log')).toContainText(
-    'JavaScript execution is not connected yet.',
+    'JavaScript execution finished.',
   )
   await expect(page.getByRole('log')).toContainText(
-    'Your code has not been executed.',
+    'Exit code: 0',
   )
   await page.getByRole('button', { name: 'Collapse terminal' }).click()
   await expect(page.getByRole('log')).toHaveCount(0)
   await editor.focus()
   await page.keyboard.press('ControlOrMeta+Enter')
   await expect(page.getByRole('log')).toBeVisible()
+  await expect(page.getByRole('log')).toContainText('JavaScript execution finished.')
+  await expect(page.getByRole('button', { name: 'Run code', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Clear terminal' }).click()
   await expect(page.getByRole('log')).toContainText('Terminal cleared.')
   await page.getByRole('button', { name: 'Copy room ID', exact: true }).click()
@@ -80,7 +87,7 @@ test('joins a room, edits both languages, preserves drafts, and previews executi
     page.getByRole('button', { name: 'Room ID copied' }),
   ).toBeVisible()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    'crew-testing',
+    roomId,
   )
 
   await page.getByRole('button', { name: 'Leave room', exact: true }).click()
@@ -131,7 +138,7 @@ for (const width of [320, 390, 768]) {
     }
     await page.getByRole('button', { name: 'Run code', exact: true }).click()
     await expect(page.getByRole('log')).toContainText(
-      'execution is not connected yet.',
+      'execution finished.',
     )
   })
 }

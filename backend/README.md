@@ -14,11 +14,18 @@ Open a native browser `WebSocket`. Send one JSON object per text message.
 
 | Client event | Fields | Behavior |
 | --- | --- | --- |
-| `join` | `roomId`, `username` | Joins a room, creating it when the first user arrives. |
+| `create` | `roomId`, `username` | Atomically creates and joins a new room; rejects an existing ID with `room_exists`. |
+| `join` | `roomId`, `username` | Joins an existing room; rejects a missing/expired ID with `room_not_found`. |
 | `edit` | `language`, `code`, `baseVersion` | Updates the document when the version matches the server's current version. |
 
 ```json
-{"type":"join","roomId":"crew-demo","username":"Chathura"}
+{"type":"create","roomId":"crew-demo","username":"Chathura"}
+```
+
+Other users then send:
+
+```json
+{"type":"join","roomId":"crew-demo","username":"Nimali"}
 ```
 
 ```json
@@ -33,13 +40,17 @@ Open a native browser `WebSocket`. Send one JSON object per text message.
 | `conflict` | `language`, `document` | The server kept the newer document. Preserve the rejected local draft for reconciliation. |
 | `error` | `code`, `message` | Display the server message. |
 
-A document is `{code, version}`, keyed by `python` or `javascript` in `documents`. A participant is `{id, username}`. Start from the `joined` snapshot. Send edits with the latest acknowledged version for that language and keep one edit in flight per document. Applying an incoming snapshot should update Monaco without echoing it back. Close the socket to leave. To reconnect, open a new socket and join again.
+A document is `{code, version}`, keyed by `python` or `javascript` in `documents`. A participant is `{id, username}`. Start from the `joined` snapshot. Send edits with the latest acknowledged version for that language and keep one edit in flight per document. Applying an incoming snapshot should update Monaco without echoing it back. Close the socket to leave. To reconnect, open a new socket and send `join` again, receiving a new client ID. Missing rooms are never recreated during reconnects.
+
+Room IDs allow `[A-Za-z0-9_-]{1,80}`. Names are stripped, must be 1–30 characters, and cannot contain ISO control characters. Languages are `python` and `javascript`. Code is limited to 65,536 UTF-16 code units; there are at most 64 active rooms and 16 users per room. Error codes include `invalid_join`, `room_exists`, `room_not_found`, `room_full`, `room_limit`, `already_joined`, `join_required`, `invalid_language`, `code_too_large`, `invalid_message` and `unknown_type`.
+
+**Protocol change:** `join` previously created missing rooms. Clients must now send `create` for creation; restart any old server. This distinction rejects mistyped IDs and prevents empty replacement rooms during reconnects. Existing edit and server event formats are unchanged.
 
 ## Networking and concurrency
 
 Java-WebSocket accepts TCP connections and handles WebSocket handshakes. Four worker threads decode incoming WebSocket traffic. A synchronized section orders updates to room membership and document versions, so two clients editing version 0 cannot both overwrite it. This is whole-document synchronization with version checks. A simultaneous edit can require manual reconciliation.
 
-Rooms and drafts are kept in memory while at least one user remains connected. Room IDs grant access in this local demo. Remote execution can take the editor's current language and source as its input and return output to the terminal through the execution branch's interface.
+Rooms and drafts are kept in memory while at least one user remains connected. Room IDs grant access in this local demo. The collaboration server only stores and broadcasts source text; it never executes it. Remote execution integration is deferred.
 
 ## Smoke test
 

@@ -43,6 +43,7 @@ export default function CodeEditor({
   onChange,
   onCursorChange,
   onRun,
+  readOnly = false,
 }) {
   const editorId = useId()
   const modelBase = `inmemory://codecrew/${encodeURIComponent(editorId)}/`
@@ -65,7 +66,10 @@ export default function CodeEditor({
       path={`${modelBase}${language === 'python' ? 'main.py' : 'main.js'}`}
       keepCurrentModel
       value={value}
-      onChange={(value) => onChange(value ?? '')}
+      onChange={(next) => {
+        // Controlled snapshots and model switches must never become outgoing edits.
+        if (!readOnly && (next ?? '') !== value) onChange(next ?? '')
+      }}
       theme="codecrew"
       beforeMount={defineTheme}
       loading={
@@ -76,13 +80,14 @@ export default function CodeEditor({
       onMount={(editor, api) => {
         editor.addAction({
           id: 'codecrew-run',
-          label: 'Run code (preview)',
+          label: 'Run code',
           keybindings: [api.KeyMod.CtrlCmd | api.KeyCode.Enter],
           run: onRun,
         })
         editor.onDidChangeCursorPosition((e) => onCursorChange(e.position))
       }}
       options={{
+        readOnly,
         fontFamily: "'Cascadia Code', 'SFMono-Regular', Consolas, monospace",
         fontSize: 14,
         lineHeight: 25,

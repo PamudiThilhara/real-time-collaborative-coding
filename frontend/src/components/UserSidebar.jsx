@@ -10,33 +10,22 @@ import {
 import { languageDetails } from '../data/editor'
 
 export default function UserSidebar({
-  username,
+  participants,
+  clientId,
+  status,
   language,
   onLanguageChange,
   open,
   onClose,
 }) {
-  const users = [
-    {
-      name: username,
-      initials: username.slice(0, 2).toUpperCase(),
-      color: 'mint',
-      detail: 'That’s you',
-      you: true,
-    },
-    {
-      name: 'Alex Morgan',
-      initials: 'AM',
-      color: 'purple',
-      detail: 'Demo collaborator',
-    },
-    {
-      name: 'Jamie Chen',
-      initials: 'JC',
-      color: 'peach',
-      detail: 'Demo collaborator',
-    },
-  ]
+  const users = participants.map((participant, index) => ({
+    id: participant.id,
+    name: participant.username,
+    initials: participant.username.slice(0, 2).toUpperCase(),
+    color: ['mint', 'purple', 'peach'][index % 3],
+    detail: participant.id === clientId ? 'You' : 'Connected',
+    you: participant.id === clientId,
+  }))
   return (
     <>
       {open && (
@@ -59,16 +48,16 @@ export default function UserSidebar({
           >
             <X size={16} />
           </button>
-          <span className="workspace-label">LOCAL</span>
+          <span className="workspace-label">{status === 'connected' ? 'LIVE' : 'OFFLINE'}</span>
         </div>
         <div className="sidebar-section-title">
           <Users size={15} />
           <h2>Your crew</h2>
-          <span className="count-badge">3</span>
+          <span className="count-badge">{users.length}</span>
         </div>
         <div className="users-list">
-          {users.map((user, i) => (
-            <div className="user-item" key={i}>
+          {users.map((user) => (
+            <div className="user-item" key={user.id}>
               <span className={`user-avatar ${user.color}`}>
                 {user.initials}
                 <i />
@@ -123,7 +112,7 @@ export default function UserSidebar({
           </span>
         </div>
         <div className="sidebar-bottom">
-          <span className="status-dot" /> Local preview <span>v1.0</span>
+          <span className="status-dot" /> {status === 'connected' ? 'Live collaboration' : 'Connection paused'} <span>v1.0</span>
         </div>
       </aside>
     </>

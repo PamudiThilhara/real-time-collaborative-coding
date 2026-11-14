@@ -12,6 +12,7 @@ export default function TerminalPanel({
   onClear,
   collapsed,
   onToggle,
+  running = false,
 }) {
   const outputRef = useRef(null)
   useEffect(() => {
@@ -28,7 +29,7 @@ export default function TerminalPanel({
         <div className="terminal-tab">
           <Terminal size={15} /> TERMINAL <span className="terminal-tab-dot" />
         </div>
-        <span className="terminal-environment">Output</span>
+        <span className="terminal-environment" role="status">{running ? 'Running…' : 'Output'}</span>
         <div className="terminal-actions">
           <button
             className="icon-button"
@@ -73,6 +74,9 @@ export default function TerminalPanel({
                   <p>{message.text}</p>
                   {message.detail && (
                     <p className="terminal-muted">{message.detail}</p>
+                  )}
+                  {message.output !== undefined && (
+                    <pre className="terminal-output">{message.output}</pre>
                   )}
                 </div>
                 {message.time && <time>{message.time}</time>}

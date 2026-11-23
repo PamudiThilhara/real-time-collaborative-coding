@@ -95,11 +95,11 @@ public final class CollaborationServer extends WebSocketServer {
             }
             JsonObject event = parsed.getAsJsonObject();
             switch (requiredString(event, "type")) {
-                case "join" -> join(socket, requiredString(event, "roomId"),
-                        requiredString(event, "username"));
+                case "create", "join" -> join(socket, requiredString(event, "roomId"),
+                        requiredString(event, "username"), "create".equals(event.get("type").getAsString()));
                 case "edit" -> edit(socket, requiredString(event, "language"),
                         requiredString(event, "code"), requiredVersion(event));
-                default -> error(socket, "unknown_type", "Use join or edit.");
+                default -> error(socket, "unknown_type", "Use create, join or edit.");
             }
         } catch (JsonParseException | IllegalArgumentException e) {
             error(socket, "invalid_message", "Invalid JSON or event fields.");
@@ -111,7 +111,7 @@ public final class CollaborationServer extends WebSocketServer {
         socket.close(1003, "Send text JSON messages");
     }
 
-    private void join(WebSocket socket, String roomId, String username) {
+    private void join(WebSocket socket, String roomId, String username, boolean create) {
         String name = username.strip();
         if (!roomId.matches("[A-Za-z0-9_-]{1,80}") || name.isEmpty()
                 || name.length() > 30 || name.codePoints().anyMatch(Character::isISOControl)) {
@@ -128,7 +128,16 @@ public final class CollaborationServer extends WebSocketServer {
                 return;
             }
             Room room = rooms.get(roomId);
+            // Creation and admission share the lock, so IDs cannot race or create phantom rooms.
+            if (create && room != null) {
+                error(socket, "room_exists", "This room ID is already in use. Create another room.");
+                return;
+            }
             if (room == null) {
+                if (!create) {
+                    error(socket, "room_not_found", "Room not found. Check the ID or create a new room.");
+                    return;
+                }
                 if (rooms.size() >= MAX_ROOMS) {
                     error(socket, "room_limit", "The server has reached its active room limit.");
                     return;

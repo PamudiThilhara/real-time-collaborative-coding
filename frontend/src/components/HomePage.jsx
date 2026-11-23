@@ -93,8 +93,22 @@ function CodePreview() {
 export default function HomePage({ username, onUsernameChange, onEnter }) {
   const [roomId, setRoomId] = useState('')
   const [error, setError] = useState('')
+  const [pending, setPending] = useState(false)
   const usernameRef = useRef(null)
   const roomIdRef = useRef(null)
+
+  async function openRoom(name, id, mode) {
+    if (pending) return
+    setError('')
+    setPending(true)
+    try {
+      await onEnter(name, id, mode)
+    } catch (error) {
+      setError(error.message)
+    } finally {
+      setPending(false)
+    }
+  }
 
   function startSession(event) {
     event.preventDefault()
@@ -110,10 +124,19 @@ export default function HomePage({ username, onUsernameChange, onEnter }) {
       roomIdRef.current.focus()
       return
     }
+    if (name.length > 30 || [...name].some((char) => char.charCodeAt(0) < 32 || (char.charCodeAt(0) >= 127 && char.charCodeAt(0) <= 159))) {
+      setError('Use a display name of 1–30 characters without control characters.')
+      return
+    }
+    if (joining && !/^[A-Za-z0-9_-]{1,80}$/.test(roomId.trim())) {
+      setError('Room IDs use 1–80 letters, numbers, underscores or hyphens.')
+      roomIdRef.current.focus()
+      return
+    }
     const id = joining
       ? roomId.trim()
       : `crew-${crypto.randomUUID().slice(0, 8)}`
-    onEnter(name, id)
+    openRoom(name, id, joining ? 'join' : 'create')
   }
 
   return (
@@ -131,7 +154,8 @@ export default function HomePage({ username, onUsernameChange, onEnter }) {
         </nav>
         <button
           className="button button-small button-ghost"
-          onClick={() => onEnter(username.trim() || 'Alex', 'crew-demo')}
+          disabled={pending}
+          onClick={() => openRoom(username.trim() || 'Guest', `crew-${crypto.randomUUID().slice(0, 8)}`, 'create')}
         >
           <Code2 size={15} /> Explore the editor <ArrowRight size={14} />
         </button>
@@ -172,7 +196,7 @@ export default function HomePage({ username, onUsernameChange, onEnter }) {
             </div>
             <h2>Pull up a chair.</h2>
             <p>Your next coding session starts here.</p>
-            <form onSubmit={startSession} noValidate>
+            <form onSubmit={startSession} noValidate aria-busy={pending}>
               <label htmlFor="username">What should we call you?</label>
               <div className="input-wrap">
                 <UserRound size={17} />
@@ -194,6 +218,7 @@ export default function HomePage({ username, onUsernameChange, onEnter }) {
                 className="button button-primary create-button"
                 type="submit"
                 value="create"
+                disabled={pending}
               >
                 <Plus size={18} /> Create a room <ArrowRight size={17} />
               </button>
@@ -224,9 +249,11 @@ export default function HomePage({ username, onUsernameChange, onEnter }) {
                 className="button button-secondary join-button"
                 type="submit"
                 value="join"
+                disabled={pending}
               >
                 Join room <ArrowRight size={17} />
               </button>
+              {pending && <p className="session-card-note" role="status">Connecting to your room…</p>}
               {error && (
                 <p className="form-error" role="alert">
                   {error}
@@ -296,10 +323,9 @@ export default function HomePage({ username, onUsernameChange, onEnter }) {
         <div className="demo-notice">
           <Radio size={14} />
           <span>
-            You're exploring a frontend preview. Rooms and collaborators are
-            simulated.
+            Rooms connect live to your crew. Share a room ID to collaborate.
           </span>
-          <span className="demo-notice-tag">LOCAL DEMO</span>
+          <span className="demo-notice-tag">LIVE ROOMS</span>
         </div>
       </main>
 

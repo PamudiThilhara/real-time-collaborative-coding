@@ -26,9 +26,9 @@ By default it listens at `http://127.0.0.1:8090`. Options: `EXECUTION_HOST`, `EX
 
 `stdout` includes standard output **and** standard error. Invalid requests return an `error` field with non-200 HTTP status. The service accepts up to 64 KiB code, returns up to 32 KiB output, imposes a 12-second execution timeout, and allows at most two concurrent jobs.
 
-## Integrate with frontend `RoomPage.jsx`
+## Frontend integration
 
-The existing frontend Run button only displays a mock message. The frontend teammate should replace that mock with a request like this (using current React state):
+The React Run Code button and Ctrl/Cmd+Enter now call this API through `frontend/src/network/execution.js`. `RoomPage.jsx` submits the selected file's latest editor contents, prevents duplicate in-flight requests, and displays combined stdout/stderr, exit codes, timeouts and service errors in `TerminalPanel.jsx`. The equivalent HTTP request is:
 
 ```js
 const response = await fetch('http://127.0.0.1:8090/execute', {
@@ -38,10 +38,12 @@ const response = await fetch('http://127.0.0.1:8090/execute', {
 });
 const result = await response.json();
 if (!response.ok) throw new Error(result.error ?? 'Execution failed');
-// Render result.stdout in the existing TerminalPanel and handle result.timedOut.
+// result.stdout includes stderr; result.exitCode and result.timedOut describe completion.
 ```
 
-**Important:** `execution`, `backend` and `frontend` are separate Git branches. A merge/integration branch must combine them before the full app works together. The Java collaboration server currently supports Python and JavaScript documents and stays unchanged here.
+Use **http://localhost:5173** for the frontend to match the default `EXECUTION_ORIGIN`. To use **http://127.0.0.1:5173**, set `$env:EXECUTION_ORIGIN = 'http://127.0.0.1:5173'` before starting the service. An origin includes its exact scheme, hostname and port. Keep the default loopback bind address; no security/CORS checks need to be disabled. No Java implementation changes were needed for frontend integration.
+
+The browser imposes a 25-second request deadline, separate from the 12-second execution limit. Leaving a room aborts the browser request, but an already-started job may continue until the existing service limit/cleanup completes. The collaboration server receives no execution requests.
 
 ## Security / limits
 
@@ -57,3 +59,5 @@ curl.exe -X POST http://127.0.0.1:8090/execute -H "Content-Type: application/jso
 ```
 
 On PowerShell, `Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8090/execute -ContentType application/json -Body '{"language":"python","code":"print(42)"}'` also works.
+
+For browser testing steps see the [root README](../README.md). `npm run test:e2e` in `frontend` tests real Python/JavaScript output, stderr, nonzero exits and Docker timeout behavior in addition to collaboration. It reuses the service on port 8090 or starts it with the default local origin; Docker/images must already be available.
